@@ -2,4 +2,4 @@ Flask==3.0.3
 gunicorn
 requests
 beautifulsoup4
-cloudscraper  
+cloudscraper  # <-- Add this line
