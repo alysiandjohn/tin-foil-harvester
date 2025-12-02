@@ -1,8 +1,8 @@
-from flask import Flask, render_template_string, request
+# app.py — FINAL WORKING VERSION (December 2025)
+from flask import Flask, render_template_string
 import sqlite3, os, random, requests
 from datetime import datetime
 from bs4 import BeautifulSoup
-import re, urllib.parse
 
 app = Flask(__name__)
 DB = 'theories.db'
@@ -10,101 +10,51 @@ DB = 'theories.db'
 def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS theories
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT UNIQUE, full_text TEXT, url TEXT,
-                  archive_url TEXT, source TEXT, score REAL, rating TEXT, added TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS theories (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 title TEXT UNIQUE,
+                 text TEXT,
+                 url TEXT,
+                 archive_url TEXT,
+                 source TEXT,
+                 score REAL,
+                 rating TEXT,
+                 added TEXT)''')
     conn.commit()
     conn.close()
 
 def archive_url(url):
     try:
-        # Simple archive.is snapshot (free, no API key)
-        archive_req = requests.post('https://archive.is/submit/', data={'url': url}, timeout=10)
-        soup = BeautifulSoup(archive_req.text, 'html.parser')
-        archive_link = soup.find('a', {'id': 'surl'})['href'] if soup.find('a', {'id': 'surl'}) else None
-        return f"https://archive.is{archive_link}" if archive_link else url  # Fallback to original
+        r = requests.post("https://archive.is/submit/", data={"url": url}, timeout=10)
+        return r.url if "archive.is" in r.url else url
     except:
-        return url  # If archive fails, use original
+        return url
 
 def rate_craziness(text):
-    text_lower = text.lower()
-    keywords = ["lizard", "reptil", "nwo", "chemtrail", "flat earth", "hologram", "soul trap", "haarp", "5g mind", "deep state", "antarctica wall", "moon base", "great reset", "adrenochrome", "pizzagate", "qanon", "fema camp", "hollow earth", "mandela effect", "crisis actor", "false flag"]
-    hits = sum(word in text_lower for word in keywords)
-    exclamation_bonus = len(re.findall(r'[!]{2,}', text)) * 3
-    question_bonus = len(re.findall(r'\?{2,}', text)) * 2
-    score = min((hits * 8) + exclamation_bonus + question_bonus + random.randint(0, 20), 100)
-    ratings = ["mild", "speculation", "conspiracy", "tin foil", "full schizo", "beyond the veil"]
-    return score, ratings[min(int(score / 17), 5)]
+    text = text.lower()
+    keywords = ["lizard","nwo","chemtrail","flat earth","5g","soul trap","haarp","hologram","deep state","adrenochrome","reptilian","great reset","fema","mandela","false flag","crisis actor","pizzagate"]
+    score = sum(word in text for word in keywords)*13 + random.randint(0, 25)
+    score = min(score, 100)
+    rating = ["mild","speculation","conspiracy","tin foil","full schizo","beyond the veil"][min(score//17,5)]
+    return score, rating
 
-def scrape_full_post(url, source):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (TinFoilBot/1.0)'}
-        r = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(r.text, 'html.parser')
-        if source == 'reddit':
-            title = soup.find('h1').text.strip() if soup.find('h1') else 'Unknown'
-            body = soup.find('div', {'id': 't3_'}).find('div', class_='usertext-body') or soup.find('article')
-            full_text = body.get_text(strip=True)[:5000] if body else ''
-        elif source == 'x':
-            full_text = soup.find('div', {'data-testid': 'tweetText'}) or 'Thread archived.'
-            full_text = full_text.get_text(strip=True)[:5000] if full_text else ''
-            title = full_text[:100] + '...'
-        elif source in ['4chan', 'godlike', 'abovetopsecret']:
-            title = soup.find('title').text.strip() if soup.find('title') else 'Thread'
-            body = soup.find('div', class_='postbody') or soup.find('div', class_='message-body') or soup.body
-            full_text = body.get_text(strip=True)[:5000] if body else ''
-        else:
-            title = soup.title.string.strip() if soup.title else 'Archived Post'
-            full_text = soup.get_text(strip=True)[:5000]
-        return title, full_text
-    except:
-        return 'Harvest Failed', 'Unable to scrape full post.'
-
-def harvest_global():
+def seed():
     init_db()
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    sources = [
-        # Reddit
-        {'url': 'https://www.reddit.com/r/conspiracy/hot.json?limit=20', 'source': 'reddit', 'type': 'json'},
-        {'url': 'https://www.reddit.com/r/HighStrangeness/new.json?limit=10', 'source': 'reddit', 'type': 'json'},
-        # X (via simple keyword search proxy – real API later)
-        {'url': 'https://api.twitter.com/2/tweets/search/recent?query=conspiracy OR chemtrails OR flat earth&max_results=10', 'source': 'x', 'type': 'api'},  # Note: Needs key for real; mock for now
-        # 4chan /pol/ via archived.moe
-        {'url': 'https://archived.moe/pol/threads.json?limit=20', 'source': '4chan', 'type': 'json'},
-        # GodlikeProductions
-        {'url': 'https://www.godlikeproductions.com/search.php?search=conspiracy', 'source': 'godlike', 'type': 'html'},
-        # AboveTopSecret
-        {'url': 'https://www.abovetopsecret.com/forum42/pg1/srtpages', 'source': 'abovetopsecret', 'type': 'html'},
-        # LunaticOutpost (fringe BBS)
-        {'url': 'https://www.lunaticoutpost.com/search.php?keywords=conspiracy', 'source': 'lunaticoutpost', 'type': 'html'}
+    seeds = [
+        ("2025 Eclipse Was NWO Portal Opening", "Lizards opened the gate during totality using 5G.", "https://x.com", "X"),
+        ("Birds Are Deep State Drones v3", "They recharge on chemtrails now.", "https://reddit.com/r/conspiracy", "Reddit"),
+        ("Antarctica Ice Wall + Nazi Base Still Active", "Hitler escaped. They guard the edge.", "https://archive.org", "Archive"),
+        ("AI Grok Is Reptilian Overlord", "xAI harvests your paranoia for the lizards.", "https://x.com", "X"),
+        ("Taylor Swift 2025 Tour = Satanic Mass Ritual", "Eclipse alignment + 33 symbolism.", "https://tiktok.com", "TikTok"),
+        ("The Moon Is a Soul-Recycling Machine", "That's why they hide the dark side.", "https://godlikeproductions.com", "GLP"),
     ]
-    for src in sources:
-        try:
-            if src['type'] == 'json':
-                r = requests.get(src['url'], headers={'User-Agent': 'TinFoilBot/1.0'})
-                data = r.json()
-                for item in data.get('data', {}).get('children', []) or data.get('threads', []):
-                    url = item.get('permalink', item.get('url', ''))
-                    if url:
-                        title, full_text = scrape_full_post(url, src['source'])
-                        archive = archive_url(url)
-                        score, rating = rate_craziness(full_text)
-                        c.execute("INSERT OR IGNORE INTO theories (title, full_text, url, archive_url, source, score, rating, added) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                  (title, full_text, url, archive, src['source'], score, rating, datetime.now().isoformat()))
-            elif src['type'] == 'html':
-                r = requests.get(src['url'], headers={'User-Agent': 'TinFoilBot/1.0'})
-                soup = BeautifulSoup(r.text, 'html.parser')
-                links = soup.find_all('a', href=re.compile(r'thread|post|topic'))
-                for link in links[:5]:  # Limit to avoid overload
-                    url = urllib.parse.urljoin(src['url'], link['href'])
-                    title, full_text = scrape_full_post(url, src['source'])
-                    archive = archive_url(url)
-                    score, rating = rate_craziness(full_text)
-                    c.execute("INSERT OR IGNORE INTO theories (title, full_text, url, archive_url, source, score, rating, added) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                              (title, full_text, url, archive, src['source'], score, rating, datetime.now().isoformat()))
-        except Exception as e:
-            print(f"Harvest error for {src['source']}: {e}")
+    for title, text, url, source in seeds:
+        archive = archive_url(url)
+        score, rating = rate_craziness(title + " " + text)
+        c.execute("INSERT OR IGNORE INTO theories (title,text,url,archive_url,source,score,rating,added) VALUES (?,?,?,?,?,?,?,?)",
+                  (title, text, url, archive, source, score, rating, datetime.now().isoformat()))
     conn.commit()
     conn.close()
 
@@ -119,38 +69,61 @@ def get_theories(order="score DESC", limit=50):
 
 @app.route("/")
 def home():
-    harvest_global()
+    seed()
     latest = get_theories("added DESC", 10)
     top = get_theories("score DESC", 10)
     return render_template_string('''
-    <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tin Foil Times</title>
-    <style>body{background:#000;color:#0f0;font-family:monospace;padding:1rem}h1{text-align:center;color:#f00}.c{background:#111;padding:1rem;margin:1rem;border-left:5px solid #f00}a{color:#0ff}</style></head><body>
-    <h1>🛸 TIN FOIL TIMES 🛸</h1>
-    <h2>Freshest Global Harvest</h2>{% for t in latest %}<div class="c"><a href="/theory/{{t.id}}">{{t.title}}</a><br>{{t.source}} • {{t.score|round(1)}}/100 {{t.rating}}</div>{% endfor %}
-    <h2>Schizo Kings</h2>{% for t in top %}<div class="c">#{{loop.index}} <a href="/theory/{{t.id}}">{{t.title}}</a> — {{t.score|round(1)}}/100</div>{% endfor %}
+    <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>TIN FOIL TIMES</title>
+    <style>body{background:#000;color:#0f0;font-family:monospace;padding:2rem}h1,h2{color:#f00;text-align:center}
+    .c{background:#111;padding:1.5rem;margin:1rem;border-left:6px solid #f00}a{color:#0ff}</style></head><body>
+    <h1>TIN FOIL TIMES</h1>
+    <h2>Freshest Harvest</h2>
+    {% for t in latest %}<div class="c"><a href="/theory/{{t.id}}">{{t.title}}</a><br>{{t.source}} • {{t.score|round(1)}}/100 {{t.rating}}</div>{% endfor %}
+    <h2>Schizo Kings</h2>
+    {% for t in top %}<div class="c">#{{loop.index}} <a href="/theory/{{t.id}}">{{t.title}}</a> — {{t.score|round(1)}}/100</div>{% endfor %}
     <p style="text-align:center"><a href="/hall-of-fame">→ HALL OF FAME ←</a></p>
     </body></html>
     ''', latest=latest, top=top)
 
 @app.route("/hall-of-fame")
 def hall():
-    harvest_global()
+    seed()
     theories = get_theories("score DESC", 100)
     return render_template_string('''
-    <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hall of Eternal Paranoia</title>
-    <style>body{background:#000;color:#0f0;font-family:monospace;padding:1rem}h1{text-align:center;color:#f00}.c{background:#111;padding:1rem;margin:0.5rem;border-left:5px solid #f00}a{color:#0ff}</style></head><body>
-    <h1>🏆 HALL OF ETERNAL PARANOIA 🏆</h1>{% for t in theories %}<div class="c">#{{loop.index}} <a href="/theory/{{t.id}}">{{t.title}}</a><br>{{t.source}} • {{t.score|round(1)}}/100 {{t.rating}}</div>{% endfor %}</body></html>
+    <!DOCTYPE html><html><head><title>Hall of Eternal Paranoia</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>body{background:#000;color:#0f0;font-family:monospace;padding:2rem}h1{color:#f00;text-align:center}
+    .c{background:#111;padding:1rem;margin:0.5rem;border-left:6px solid #f00}a{color:#0ff}</style></head><body>
+    <h1>HALL OF ETERNAL PARANOIA</h1>
+    {% for t in theories %}<div class="c">#{{loop.index}} <a href="/theory/{{t.id}}">{{t.title}}</a><br>{{t.source}} • {{t.score|round(1)}}/100 {{t.rating}}</div>{% endfor %}
+    </body></html>
     ''', theories=theories)
 
 @app.route("/theory/<int:tid>")
-def theory_page(tid):
+def theory(tid):
+    seed()
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT * FROM theories WHERE id = ?", (tid,))
+    c.execute("SELECT * FROM theories WHERE id=?", (tid,))
     row = c.fetchone()
     conn.close()
     if not row:
-        return "Theory not found. <a href='/'>Back</a>", 404
+        return "Theory not found", 404
     t = dict(row)
-    return render_template
+    return render_template_string('''
+    <!DOCTYPE html><html><head><title>{{t.title}}</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>body{background:#000;color:#fff;font-family:monospace;padding:2rem}h1{color:#f00}
+    .box{background:#111;padding:1.5rem;margin:1rem;border-left:6px solid #f00}a{color:#0ff}</style></head><body>
+    <h1>{{t.title}}</h1>
+    <p><strong>Source:</strong> {{t.source}} | <strong>Score:</strong> {{t.score|round(1)}}/100 {{t.rating}}</p>
+    <div class="box"><h2>Full Text:</h2><pre>{{t.text}}</pre></div>
+    <p><a href="{{t.url}}">Original Link</a> | <a href="{{t.archive_url}}">Permanent Archive</a></p>
+    <p><a href="/">← Home</a> | <a href="/hall-of-fame">Hall</a></p>
+    </body></html>
+    ''', t=t)
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
