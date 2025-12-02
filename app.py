@@ -68,7 +68,7 @@ def get_theories():
 
 @app.route("/")
 def home():
-    seed()
+    harvest_real()
     theories = get_theories()
     return render_template_string('''
     <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
