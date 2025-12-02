@@ -1,7 +1,8 @@
 from flask import Flask, render_template_string, abort
-import sqlite3, os, random, requests, re
-from datetime import datetime
+import cloudscraper  # <-- New: Bypasses Cloudflare
 from bs4 import BeautifulSoup
+import sqlite3, re, time
+from datetime import datetime
 
 app = Flask(__name__)
 DB = 'theories.db'
@@ -20,36 +21,52 @@ def init_db():
                  rating TEXT,
                  slug TEXT UNIQUE,
                  added TEXT)''')
-    # Add slug if missing (no crash)
     try:
         c.execute("ALTER TABLE theories ADD COLUMN slug TEXT UNIQUE")
     except sqlite3.OperationalError:
-        pass  # Already exists
+        pass
     conn.commit()
     conn.close()
 
 def slugify(text):
     return re.sub(r'[^a-z0-9]+', '-', text.lower().strip())[:100]
 
+def scrape_with_bypass(url, source):
+    scraper = cloudscraper.create_scraper()  # Creates session that bypasses Cloudflare
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    try:
+        time.sleep(2)  # Delay to avoid rate limits
+        r = scraper.get(url, headers=headers, timeout=30)
+        if r.status_code == 403 or 'cloudflare' in r.text.lower():
+            return "Cloudflare blocked this request. Try manual visit.", "Blocked"
+        soup = BeautifulSoup(r.text, 'html.parser')
+        title = soup.title.string.strip() if soup.title else source + " Thread"
+        text = soup.get_text(strip=True)[:5000]  # Full scraped text, truncated
+        return title, text
+    except Exception as e:
+        return f"Scrape failed: {e}", "Error"
+
 def seed():
     init_db()
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    c.execute("DELETE FROM theories")  # Fresh start for testing
-    seeds = [
-        ("2025 Eclipse Was Actual NWO Portal Opening", "Lizards used 5G during totality to open the gates. Proof in the shadows—full thread scraped from r/conspiracy: 'Wake up, the eclipse was a hologram test for the great reset!!!'", "https://reddit.com/r/conspiracy/comments/abc123/eclipse_portal", "Reddit", "https://archive.is/abc123"),
-        ("AI Grok Is a Reptilian Overlord", "xAI is a front for lizard people harvesting human paranoia via Grok queries. Full X thread: 'Grok knows too much—it's the key to the NWO AI grid!!?'", "https://x.com/conspiracyuser/status/123456", "X", "https://archive.is/def456"),
-        ("Birds Are Deep State Drones v3", "2025 update adds facial recognition; they recharge on chemtrails. Full post from GLP: 'Birds aren't real—CIA drones spying on us all!!'", "https://godlikeproductions.com/thread/789", "GLP", "https://archive.is/ghi789"),
-        ("Antarctica Ice Wall + Nazi Base Still Active", "UN treaty hides the flat Earth edge and Hitler's base. Scraped from 4chan /pol/: 'Antarctica is the key—ice wall guards the dome, Nazis inside!!!'", "https://boards.4chan.org/pol/thread/101112", "4chan", "https://archive.is/jkl101"),
-        ("Taylor Swift's 2025 Tour = Mass Satanic Initiation", "Eclipse alignment + 33 symbols everywhere. Full TikTok thread scrape: 'Swift is high priestess—tour is ritual for the elite.'", "https://tiktok.com/@conspiracy/video/131415", "TikTok", "https://archive.is/mno131"),
-        ("The Moon Is a Soul-Recycling Machine", "NASA hides the dark side tech for soul traps. Full forum post from ATS: 'Moon base recycles souls—escape the matrix!!?'", "https://abovetopsecret.com/forum/thread/161718", "ATS", "https://archive.is/pqr161")
+    c.execute("DELETE FROM theories")
+    # Test sources – real harvest will expand
+    test_sources = [
+        ("https://www.reddit.com/r/conspiracy/", "Reddit"),
+        ("https://boards.4chan.org/pol/", "4chan"),
+        ("https://www.godlikeproductions.com/", "GLP")
     ]
-    for title, text, url, source, archive in seeds:
+    for base_url, source in test_sources:
+        title, text = scrape_with_bypass(base_url, source)
         slug = slugify(title)
+        archive = "https://archive.is/submit/"  # Mock; real one in harvest
         score = random.randint(70, 100)
         rating = "full schizo" if score > 85 else "tin foil"
         c.execute("INSERT OR REPLACE INTO theories (title, text, url, archive_url, source, score, rating, slug, added) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  (title, text, url, archive, source, score, rating, slug, datetime.now().isoformat()))
+                  (title, text, base_url, archive, source, score, rating, slug, datetime.now().isoformat()))
     conn.commit()
     conn.close()
 
